@@ -70,7 +70,9 @@ The plugin starts every agent itself, and passes at launch:
 - **the task's rules** as a standing system prompt: a file, or for Codex inline when short
   ([long rules and long messages](could-not-start.md#long-rules-and-long-messages)).
 
-Nothing is written to your own agent settings, and your own hooks keep running.
+Nothing is written to your own agent settings, and your own hooks keep running. Claude Code's settings file also
+turns off its idle compaction (`"idleCompaction": false`): compacting a session that sat idle shows herdr a turn that
+no one asked for, and a finished task would fall back to "Stopped without a summary".
 
 At each turn's end, the hook runs `herdr-projects turn-ended` (silent, at most two seconds, protected by a per-launch
 secret). The finish line then reads the end of that agent's saved conversation: its last message, an API or login error,

@@ -120,3 +120,14 @@ fn a_program_herdr_sees_only_through_its_integration_is_not_started_without_it()
     settle(&id);
     assert!(calls(&w).iter().any(|c| c.starts_with("agent start") && c.contains("--kind omp")), "{:?}", calls(&w));
 }
+
+#[test]
+fn a_claude_code_the_board_starts_does_not_compact_while_idle() {
+    // Idle compaction (Claude Code 2.1.312) shows herdr a turn no one asked for: a finished task fell back to "Stopped
+    // without a summary" (issue #423). The launch settings outrank the user's own, so it is off for the board's agents.
+    let w = world();
+    let h = sw::agents::adapter::Hook { shim: "/bin/board".into(), id: "repo/1".into(), role: "agent".into(), token: "t".into(), round: 0, dir: w.base.clone() };
+    let a = sw::agents::adapter::hook_args("claude", &h).unwrap().unwrap();
+    let file = &a[a.iter().position(|x| x == "--settings").unwrap() + 1];
+    assert_eq!(sw::store::files::read_json(std::path::Path::new(file)).unwrap().at("idleCompaction"), &json!(false));
+}
