@@ -100,3 +100,52 @@ fn plan_approve_reviewer_sends_a_failing_plan_back_and_builds_one_that_passes() 
     assert_eq!(w.state().arr("calls").iter().map(text).filter(|c| c.starts_with("pane run") && c.contains("bwrap")).count(), 4, "the writer, and each reviewer of the plan, in the read-only mount");
     assert!(!t.b("reviewRound") && !t.b("review"));
 }
+
+#[test]
+fn a_tell_right_after_the_yes_waits_for_the_build_and_goes_with_it() {
+    let w = plan_world(json!({ "plan.approve": "you", "worker.agent": "codex" }));
+    w.script(json!({ "worker": [{ "plan": PLAN, "note": "The plan is written." }, { "status": "working" }] }));
+    let id = w.add("Work");
+    delegate(&id);
+    assert_eq!(settle(&id).s("stage"), "plan");
+    sw::actions::plan::approve_plan(&id).unwrap();
+    // Told before the build's runner ran: the plan writer in the mount must not get it as a reply.
+    sw::actions::talk::tell(&id, "Also add g.txt.", false).unwrap();
+    assert_eq!(task(&id).s("stage"), "starting");
+    let t = settle(&id);
+    assert_eq!(t.s("stage"), "working", "{}", t.at("failure"));
+    assert!(t.at("plan").b("built"));
+    assert!(!agent_of(&w, t.at("link").s("pane")).b("boxed"));
+    let last = prompts(&w, t.at("link").s("pane")).last().cloned().unwrap_or_default();
+    assert!(last.contains("approved plan") && last.contains("Also add g.txt."), "{last}");
+}
+
+#[test]
+fn a_tell_while_the_start_runs_its_setup_waits_for_the_agent() {
+    let w = plan_world(json!({ "worker.agent": "codex" }));
+    let id = w.add("Work");
+    delegate(&id);
+    settle(&id);
+    // As if the start's runner still ran the repo's setup: the start must not be cut off by the words.
+    sw::store::tasks::update(&id, |t| { t.put("stage", "setup"); Ok(sw::store::tasks::Change::Write) }).unwrap();
+    sw::actions::talk::tell(&id, "Also add g.txt.", false).unwrap();
+    assert_eq!(task(&id).s("stage"), "setup");
+    assert_eq!(sw::store::inbox::take_text(&id).unwrap().iter().map(|m| m.t("text")).collect::<Vec<_>>(), vec!["Also add g.txt."]);
+}
+
+#[test]
+fn a_tell_while_a_live_agent_is_started_again_goes_with_continue() {
+    let w = plan_world(json!({ "worker.agent": "codex" }));
+    w.script(json!({ "worker": [{ "status": "working" }] }));
+    let id = w.add("Work");
+    delegate(&id);
+    let t = settle(&id);
+    sw::actions::talk::stop(&id).unwrap();
+    delegate(&id);
+    sw::actions::talk::tell(&id, "Also add g.txt.", false).unwrap();
+    assert_eq!(task(&id).s("stage"), "starting");
+    settle(&id);
+    let p = prompts(&w, t.at("link").s("pane"));
+    assert!(p.iter().any(|x| x.contains("Continue this task.") && x.contains("Also add g.txt.")), "{p:?}");
+    assert!(sw::store::inbox::take_text(&id).unwrap().is_empty());
+}
